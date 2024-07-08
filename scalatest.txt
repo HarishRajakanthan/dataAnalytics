@@ -1,0 +1,92 @@
+libraryDependencies ++= Seq(
+  "org.scalatest" %% "scalatest" % "3.2.14" % Test,
+  "org.mockito" %% "mockito-scala" % "1.17.12" % Test,
+  "com.softwaremill.sttp.client3" %% "core" % "3.3.18"
+)
+
+
+
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
+import sttp.client3._
+
+class ApiService {
+  private val backend = HttpURLConnectionBackend()
+
+  def fetchData(url: String): Future[String] = Future {
+    val request = basicRequest.get(uri"$url")
+    val response = request.send(backend)
+    response.body match {
+      case Right(data) => data
+      case Left(error) => throw new Exception(s"API call failed: $error")
+    }
+  }
+
+  def calculate(data: String): Int = {
+    // Perform some calculations
+    data.length * 2
+  }
+
+  def process(url: String): Future[Int] = {
+    fetchData(url).map { data =>
+      calculate(data)
+    }
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+import org.scalatest.flatspec.AsyncFlatSpec
+import org.scalatest.matchers.should.Matchers
+import org.mockito.scalatest.AsyncIdiomaticMockito
+import org.mockito.ArgumentMatchersSugar.any
+import scala.concurrent.Future
+
+class ApiServiceTest extends AsyncFlatSpec with Matchers with AsyncIdiomaticMockito {
+
+  "fetchData" should "return data from the API" in {
+    val mockApiService = mock[ApiService]
+    mockApiService.fetchData(any[String]) returns Future.successful("test data")
+
+    val result = mockApiService.fetchData("http://test.url")
+    result.map { data =>
+      data should be ("test data")
+    }
+  }
+
+  it should "throw an exception if API call fails" in {
+    val mockApiService = mock[ApiService]
+    mockApiService.fetchData(any[String]) returns Future.failed(new Exception("API call failed"))
+
+    recoverToExceptionIf[Exception] {
+      mockApiService.fetchData("http://test.url")
+    } map { ex =>
+      ex.getMessage should be ("API call failed")
+    }
+  }
+
+  "calculate" should "return correct calculation" in {
+    val apiService = new ApiService
+    val result = apiService.calculate("test data")
+    result should be (18)
+  }
+
+  "process" should "return correct result" in {
+    val mockApiService = mock[ApiService]
+    mockApiService.fetchData(any[String]) returns Future.successful("test data")
+    mockApiService.calculate(any[String]) returns 18
+
+    val result = mockApiService.process("http://test.url")
+    result.map { data =>
+      data should be (18)
+    }
+  }
+}
