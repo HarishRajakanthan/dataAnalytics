@@ -1,0 +1,210 @@
+libraryDependencies ++= Seq(
+  "com.typesafe.play" %% "play-ws-standalone" % "2.1.3",
+  "com.typesafe.play" %% "play-ws-standalone-json" % "2.1.3",
+  "com.typesafe.akka" %% "akka-stream" % "2.6.14",
+  "org.scalatest" %% "scalatest" % "3.2.9" % Test,
+  "org.mockito" %% "mockito-scala" % "1.16.37" % Test
+)
+
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+import play.api.libs.json._
+import play.api.libs.ws._
+import play.api.libs.ws.ahc._
+import akka.actor.ActorSystem
+import akka.stream.ActorMaterializer
+import java.sql.{Connection, DriverManager}
+
+case class Employee(empId: Int, empName: String, dept: String, sal: Double, rating: Double)
+case class HikeInfo(deptHike: Double, ratingHike: Double)
+
+class EmployeeDataProcessor(ws: WSClient, dbConfig: DatabaseConfig) {
+
+  def fetchDataFromApi(): Future[Seq[Employee]] = {
+    val apiUrl = "https://api.example.com/employees"
+    ws.url(apiUrl).get().map { response =>
+      response.json.as[Seq[Employee]]
+    }
+  }
+
+  def getHikeInfo(): Map[(String, Double), HikeInfo] = {
+    var hikeMap = Map[(String, Double), HikeInfo]()
+    val connection = getConnection()
+    try {
+      val statement = connection.createStatement()
+      val resultSet = statement.executeQuery("SELECT dept, rating, dept_hike, rating_hike FROM hike_info")
+      while (resultSet.next()) {
+        val dept = resultSet.getString("dept")
+        val rating = resultSet.getDouble("rating")
+        val deptHike = resultSet.getDouble("dept_hike")
+        val ratingHike = resultSet.getDouble("rating_hike")
+        hikeMap += ((dept, rating) -> HikeInfo(deptHike, ratingHike))
+      }
+    } finally {
+      connection.close()
+    }
+    hikeMap
+  }
+
+  def processEmployeeData(employees: Seq[Employee], hikeInfo: Map[(String, Double), HikeInfo]): Seq[Employee] = {
+    employees.map { emp =>
+      val hike = hikeInfo.getOrElse((emp.dept, emp.rating), HikeInfo(0, 0))
+      val salaryHike = emp.sal * (hike.deptHike + hike.ratingHike)
+      emp.copy(sal = emp.sal + salaryHike)
+    }
+  }
+
+  def performDataQualityCheck(employees: Seq[Employee]): Seq[String] = {
+    employees.flatMap { emp =>
+      var issues = Seq[String]()
+      if (emp.empId <= 0) issues :+= s"Invalid employee ID for ${emp.empName}"
+      if (emp.empName.isEmpty) issues :+= s"Empty name for employee ID ${emp.empId}"
+      if (emp.sal < 0) issues :+= s"Negative salary for employee ${emp.empName}"
+      if (emp.rating < 0 || emp.rating > 5) issues :+= s"Invalid rating for employee ${emp.empName}"
+      issues
+    }
+  }
+
+  def writeToOutputTable(employees: Seq[Employee]): Unit = {
+    val connection = getConnection()
+    try {
+      val preparedStatement = connection.prepareStatement(
+        "INSERT INTO output_employee_data (emp_id, emp_name, dept, sal, rating) VALUES (?, ?, ?, ?, ?)"
+      )
+      employees.foreach { emp =>
+        preparedStatement.setInt(1, emp.empId)
+        preparedStatement.setString(2, emp.empName)
+        preparedStatement.setString(3, emp.dept)
+        preparedStatement.setDouble(4, emp.sal)
+        preparedStatement.setDouble(5, emp.rating)
+        preparedStatement.executeUpdate()
+      }
+    } finally {
+      connection.close()
+    }
+  }
+
+  private def getConnection(): Connection = {
+    DriverManager.getConnection(dbConfig.url, dbConfig.user, dbConfig.password)
+  }
+}
+
+case class DatabaseConfig(url: String, user: String, password: String)
+
+object Main extends App {
+  implicit val system: ActorSystem = ActorSystem()
+  implicit val materializer: ActorMaterializer = ActorMaterializer()
+  
+  val wsClient = AhcWSClient()
+  val dbConfig = DatabaseConfig("jdbc:oracle:thin:@localhost:1521/XE", "username", "password")
+  
+  val processor = new EmployeeDataProcessor(wsClient, dbConfig)
+
+  val result = for {
+    employees <- processor.fetchDataFromApi()
+    hikeInfo = processor.getHikeInfo()
+    processedEmployees = processor.processEmployeeData(employees, hikeInfo)
+    _ = processor.writeToOutputTable(processedEmployees)
+    qualityIssues = processor.performDataQualityCheck(processedEmployees)
+  } yield (processedEmployees, qualityIssues)
+
+  result.onComplete { case scala.util.Success((employees, issues)) =>
+    println(s"Processed ${employees.length} employees")
+    println(s"Found ${issues.length} data quality issues")
+    wsClient.close()
+    system.terminate()
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
+import org.mockito.MockitoSugar
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+import play.api.libs.ws._
+
+class EmployeeDataProcessorSpec extends AnyFlatSpec with Matchers with MockitoSugar {
+
+  "EmployeeDataProcessor" should "fetch data from API correctly" in {
+    val mockWs = mock[WSClient]
+    val mockWSRequest = mock[WSRequest]
+    val mockWSResponse = mock[WSResponse]
+    val mockDbConfig = mock[DatabaseConfig]
+
+    when(mockWs.url(any[String])).thenReturn(mockWSRequest)
+    when(mockWSRequest.get()).thenReturn(Future.successful(mockWSResponse))
+    when(mockWSResponse.json).thenReturn(Json.parse(
+      """[
+        |  {"emp_id": 1, "emp_name": "John Doe", "dept": "IT", "sal": 50000, "rating": 4.5},
+        |  {"emp_id": 2, "emp_name": "Jane Smith", "dept": "HR", "sal": 60000, "rating": 4.0}
+        |]""".stripMargin))
+
+    val processor = new EmployeeDataProcessor(mockWs, mockDbConfig)
+    val result = processor.fetchDataFromApi()
+
+    result.map { employees =>
+      employees.length shouldBe 2
+      employees.head.empName shouldBe "John Doe"
+      employees.last.empName shouldBe "Jane Smith"
+    }
+  }
+
+  it should "process employee data correctly" in {
+    val mockWs = mock[WSClient]
+    val mockDbConfig = mock[DatabaseConfig]
+    val processor = new EmployeeDataProcessor(mockWs, mockDbConfig)
+
+    val employees = Seq(
+      Employee(1, "John Doe", "IT", 50000, 4.5),
+      Employee(2, "Jane Smith", "HR", 60000, 4.0)
+    )
+
+    val hikeInfo = Map(
+      ("IT", 4.5) -> HikeInfo(0.05, 0.03),
+      ("HR", 4.0) -> HikeInfo(0.04, 0.02)
+    )
+
+    val processedEmployees = processor.processEmployeeData(employees, hikeInfo)
+
+    processedEmployees.length shouldBe 2
+    processedEmployees.head.sal shouldBe 54000.0 // 50000 * (1 + 0.05 + 0.03)
+    processedEmployees.last.sal shouldBe 63600.0 // 60000 * (1 + 0.04 + 0.02)
+  }
+
+  it should "perform data quality checks correctly" in {
+    val mockWs = mock[WSClient]
+    val mockDbConfig = mock[DatabaseConfig]
+    val processor = new EmployeeDataProcessor(mockWs, mockDbConfig)
+
+    val employees = Seq(
+      Employee(0, "", "IT", -1000, 6.0),
+      Employee(2, "Jane Smith", "HR", 60000, 4.0)
+    )
+
+    val issues = processor.performDataQualityCheck(employees)
+
+    issues.length shouldBe 4
+    issues should contain("Invalid employee ID for ")
+    issues should contain("Empty name for employee ID 0")
+    issues should contain("Negative salary for employee ")
+    issues should contain("Invalid rating for employee ")
+  }
+}
