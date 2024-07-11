@@ -77,7 +77,7 @@ class EmployeeDataProcessor(db: Database) {
   }
 
   // Calculate salary hike and update output table
-    def calculateAndUpdateSalaries: Future[Int] = {
+   def calculateAndUpdateSalaries: Int = {
     val action = for {
       empData <- employees.result
       hikeData <- hikeInfo.result
@@ -94,7 +94,8 @@ class EmployeeDataProcessor(db: Database) {
       insertCount <- outputTable ++= updatedEmployees
     } yield insertCount
 
-    db.run(action.transactionally)
+    // Run the action and wait for the result
+    Await.result(db.run(action.transactionally), 30.seconds)
   }
 
   // Data quality check
