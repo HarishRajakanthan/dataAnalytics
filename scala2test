@@ -155,3 +155,11 @@ class EmployeeDataProcessorSpec extends AnyFlatSpec with Matchers with MockitoSu
     exception.getMessage should include("Failed to parse JSON")
   }
 }
+
+
+
+
+ when(mockWs.url(any[String])).thenReturn(mockWSRequest)
+    when(mockWSRequest.get()).thenAnswer(_ => Future.successful(mockWSResponse))
+    when(mockWSResponse.status).thenReturn(200)
+    when(mockWSResponse.body).thenReturn(jsonString)
