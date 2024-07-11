@@ -1,0 +1,254 @@
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
+import play.api.libs.json._
+import slick.jdbc.OracleProfile.api._
+
+case class Employee(empId: Int, empName: String, dept: String, sal: Double, rating: Double)
+case class HikeInfo(deptHike: Double, ratingHike: Double)
+
+class EmployeeDataProcessor(db: Database) {
+  // Define table queries
+  private val employees = TableQuery[EmployeesTable]
+  private val hikeInfo = TableQuery[HikeInfoTable]
+  private val outputTable = TableQuery[OutputTable]
+
+  // Table definitions
+  class EmployeesTable(tag: Tag) extends Table[Employee](tag, "EMPLOYEES") {
+    def empId = column[Int]("EMP_ID", O.PrimaryKey)
+    def empName = column[String]("EMP_NAME")
+    def dept = column[String]("DEPT")
+    def sal = column[Double]("SAL")
+    def rating = column[Double]("RATING")
+    def * = (empId, empName, dept, sal, rating) <> (Employee.tupled, Employee.unapply)
+  }
+
+  class HikeInfoTable(tag: Tag) extends Table[HikeInfo](tag, "HIKE_INFO") {
+    def dept = column[String]("DEPT", O.PrimaryKey)
+    def deptHike = column[Double]("DEPT_HIKE")
+    def ratingHike = column[Double]("RATING_HIKE")
+    def * = (deptHike, ratingHike) <> (HikeInfo.tupled, HikeInfo.unapply)
+  }
+
+  class OutputTable(tag: Tag) extends Table[(Int, String, String, Double, Double, Double)](tag, "OUTPUT_TABLE") {
+    def empId = column[Int]("EMP_ID", O.PrimaryKey)
+    def empName = column[String]("EMP_NAME")
+    def dept = column[String]("DEPT")
+    def oldSal = column[Double]("OLD_SAL")
+    def newSal = column[Double]("NEW_SAL")
+    def hikePercentage = column[Double]("HIKE_PERCENTAGE")
+    def * = (empId, empName, dept, oldSal, newSal, hikePercentage)
+  }
+
+  // Fetch employee data and return as JSON
+  def fetchEmployeeData: Future[JsValue] = {
+    val query = employees.result
+    db.run(query).map { result =>
+      Json.toJson(result.map { employee =>
+        Json.obj(
+          "emp_id" -> employee.empId,
+          "emp_name" -> employee.empName,
+          "dept" -> employee.dept,
+          "sal" -> employee.sal,
+          "rating" -> employee.rating
+        )
+      })
+    }
+  }
+
+  // Calculate salary hike and update output table
+  def calculateAndUpdateSalaries: Future[Int] = {
+    val action = for {
+      empData <- employees.result
+      hikeData <- hikeInfo.result
+    } yield (empData, hikeData)
+
+    db.run(action).flatMap { case (employees, hikeInfos) =>
+      val hikeInfoMap = hikeInfos.map(info => info.dept -> info).toMap
+
+      val updatedEmployees = employees.map { employee =>
+        val hike = hikeInfoMap.get(employee.dept).map { info =>
+          info.deptHike + (employee.rating * info.ratingHike)
+        }.getOrElse(0.0)
+        val newSalary = employee.sal * (1 + hike)
+        (employee.empId, employee.empName, employee.dept, employee.sal, newSalary, hike * 100)
+      }
+
+      db.run(outputTable ++= updatedEmployees)
+    }
+  }
+
+  // Data quality check
+  def performDataQualityCheck(data: Seq[Employee]): Seq[String] = {
+    data.flatMap { employee =>
+      var issues = Seq.empty[String]
+      if (employee.empId <= 0) issues :+= s"Invalid employee ID for ${employee.empName}"
+      if (employee.empName.isEmpty) issues :+= s"Empty name for employee ID ${employee.empId}"
+      if (employee.sal < 0) issues :+= s"Negative salary for employee ${employee.empName}"
+      if (employee.rating < 0 || employee.rating > 5) issues :+= s"Invalid rating for employee ${employee.empName}"
+      issues
+    }
+  }
+}
+
+// Usage example
+object Main extends App {
+  val db = Database.forConfig("mydb")
+  val processor = new EmployeeDataProcessor(db)
+
+  // Fetch and print employee data
+  processor.fetchEmployeeData.foreach(println)
+
+  // Calculate and update salaries
+  processor.calculateAndUpdateSalaries.foreach { count =>
+    println(s"Updated $count records")
+  }
+
+  // Perform data quality check
+  val employeeData: Seq[Employee] = ??? // Fetch this data from your API
+  val issues = processor.performDataQualityCheck(employeeData)
+  issues.foreach(println)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import org.scalatest._
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
+import org.mockito.MockitoSugar
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
+import slick.jdbc.OracleProfile.api._
+import play.api.libs.json._
+import java.sql.SQLException
+
+class EmployeeDataProcessorSpec extends AnyFlatSpec with Matchers with MockitoSugar {
+
+  "EmployeeDataProcessor" should "fetch employee data as JSON" in {
+    val mockDb = mock[Database]
+    val processor = new EmployeeDataProcessor(mockDb)
+
+    val mockEmployees = Seq(
+      Employee(1, "John Doe", "IT", 50000, 4.5),
+      Employee(2, "Jane Smith", "HR", 60000, 4.0)
+    )
+
+    when(mockDb.run(any[DBIO[Seq[Employee]]])).thenReturn(Future.successful(mockEmployees))
+
+    val result = processor.fetchEmployeeData
+
+    result.map { json =>
+      (json \ 0 \ "emp_id").as[Int] shouldBe 1
+      (json \ 0 \ "emp_name").as[String] shouldBe "John Doe"
+      (json \ 1 \ "emp_id").as[Int] shouldBe 2
+      (json \ 1 \ "emp_name").as[String] shouldBe "Jane Smith"
+    }
+  }
+
+  it should "calculate and update salaries correctly" in {
+    val mockDb = mock[Database]
+    val processor = new EmployeeDataProcessor(mockDb)
+
+    val mockEmployees = Seq(
+      Employee(1, "John Doe", "IT", 50000, 4.5),
+      Employee(2, "Jane Smith", "HR", 60000, 4.0)
+    )
+
+    val mockHikeInfo = Seq(
+      HikeInfo("IT", 0.05, 0.01),
+      HikeInfo("HR", 0.04, 0.02)
+    )
+
+    when(mockDb.run(any[DBIO[(Seq[Employee], Seq[HikeInfo])]])).thenReturn(Future.successful((mockEmployees, mockHikeInfo)))
+    when(mockDb.run(any[DBIO[Int]])).thenReturn(Future.successful(2))
+
+    val result = processor.calculateAndUpdateSalaries
+
+    result.map { count =>
+      count shouldBe 2
+    }
+  }
+
+  it should "perform data quality checks correctly" in {
+    val mockDb = mock[Database]
+    val processor = new EmployeeDataProcessor(mockDb)
+
+    val testData = Seq(
+      Employee(1, "John Doe", "IT", 50000, 4.5),
+      Employee(0, "", "HR", -1000, 6.0)
+    )
+
+    val issues = processor.performDataQualityCheck(testData)
+
+    issues should contain allOf(
+      "Invalid employee ID for ",
+      "Empty name for employee ID 0",
+      "Negative salary for employee ",
+      "Invalid rating for employee "
+    )
+  }
+
+  it should "handle empty data correctly" in {
+    val mockDb = mock[Database]
+    val processor = new EmployeeDataProcessor(mockDb)
+
+    // Mock empty results for both employee and hike info queries
+    when(mockDb.run(any[DBIO[Seq[Employee]]])).thenReturn(Future.successful(Seq.empty))
+    when(mockDb.run(any[DBIO[(Seq[Employee], Seq[HikeInfo])]])).thenReturn(Future.successful((Seq.empty, Seq.empty)))
+
+    // Test fetchEmployeeData with empty result
+    val fetchResult = processor.fetchEmployeeData
+    fetchResult.map { json =>
+      json shouldBe JsArray()
+    }
+
+    // Test calculateAndUpdateSalaries with empty result
+    val calculateResult = processor.calculateAndUpdateSalaries
+    calculateResult.map { count =>
+      count shouldBe 0
+    }
+
+    // Test performDataQualityCheck with empty data
+    val qualityCheckResult = processor.performDataQualityCheck(Seq.empty)
+    qualityCheckResult shouldBe empty
+  }
+
+  it should "handle database connection issues" in {
+    val mockDb = mock[Database]
+    val processor = new EmployeeDataProcessor(mockDb)
+
+    // Simulate a database connection error
+    val dbError = new SQLException("Unable to connect to the database")
+    when(mockDb.run(any[DBIO[Seq[Employee]]])).thenReturn(Future.failed(dbError))
+    when(mockDb.run(any[DBIO[(Seq[Employee], Seq[HikeInfo])]])).thenReturn(Future.failed(dbError))
+
+    // Test fetchEmployeeData with database error
+    recoverToSucceededIf[SQLException] {
+      processor.fetchEmployeeData
+    }
+
+    // Test calculateAndUpdateSalaries with database error
+    recoverToSucceededIf[SQLException] {
+      processor.calculateAndUpdateSalaries
+    }
+  }
+}
