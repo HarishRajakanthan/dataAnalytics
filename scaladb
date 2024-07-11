@@ -1,3 +1,25 @@
+libraryDependencies ++= Seq(
+  // Slick for database access
+  "com.typesafe.slick" %% "slick" % "3.3.3",
+  
+  // Slick extensions for Oracle
+  "com.typesafe.slick" %% "slick-hikaricp" % "3.3.3",
+  
+  // Oracle JDBC driver
+  "com.oracle.database.jdbc" % "ojdbc8" % "21.5.0.0",
+  
+  // Play JSON for JSON handling
+  "com.typesafe.play" %% "play-json" % "2.9.2",
+  
+  // ScalaTest for unit testing
+  "org.scalatest" %% "scalatest" % "3.2.9" % Test,
+  
+  // Mockito for mocking in tests
+  "org.mockito" %% "mockito-scala" % "1.16.37" % Test
+)
+
+
+
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import play.api.libs.json._
