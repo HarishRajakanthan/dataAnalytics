@@ -19,14 +19,13 @@ libraryDependencies ++= Seq(
 )
 
 
-
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import play.api.libs.json._
 import slick.jdbc.OracleProfile.api._
 
 case class Employee(empId: Int, empName: String, dept: String, sal: Double, rating: Double)
-case class HikeInfo(deptHike: Double, ratingHike: Double)
+case class HikeInfo(dept: String, deptHike: Double, ratingHike: Double)
 
 class EmployeeDataProcessor(db: Database) {
   // Define table queries
@@ -48,7 +47,7 @@ class EmployeeDataProcessor(db: Database) {
     def dept = column[String]("DEPT", O.PrimaryKey)
     def deptHike = column[Double]("DEPT_HIKE")
     def ratingHike = column[Double]("RATING_HIKE")
-    def * = (deptHike, ratingHike) <> (HikeInfo.tupled, HikeInfo.unapply)
+    def * = (dept, deptHike, ratingHike) <> (HikeInfo.tupled, HikeInfo.unapply)
   }
 
   class OutputTable(tag: Tag) extends Table[(Int, String, String, Double, Double, Double)](tag, "OUTPUT_TABLE") {
@@ -88,11 +87,14 @@ class EmployeeDataProcessor(db: Database) {
       val hikeInfoMap = hikeInfos.map(info => info.dept -> info).toMap
 
       val updatedEmployees = employees.map { employee =>
-        val hike = hikeInfoMap.get(employee.dept).map { info =>
-          info.deptHike + (employee.rating * info.ratingHike)
-        }.getOrElse(0.0)
-        val newSalary = employee.sal * (1 + hike)
-        (employee.empId, employee.empName, employee.dept, employee.sal, newSalary, hike * 100)
+        hikeInfoMap.get(employee.dept).map { info =>
+          val hike = info.deptHike + (employee.rating * info.ratingHike)
+          val newSalary = employee.sal * (1 + hike)
+          (employee.empId, employee.empName, employee.dept, employee.sal, newSalary, hike * 100)
+        }.getOrElse {
+          // If no matching hike info found, keep the salary unchanged
+          (employee.empId, employee.empName, employee.dept, employee.sal, employee.sal, 0.0)
+        }
       }
 
       db.run(outputTable ++= updatedEmployees)
@@ -105,6 +107,7 @@ class EmployeeDataProcessor(db: Database) {
       var issues = Seq.empty[String]
       if (employee.empId <= 0) issues :+= s"Invalid employee ID for ${employee.empName}"
       if (employee.empName.isEmpty) issues :+= s"Empty name for employee ID ${employee.empId}"
+      if (employee.dept.isEmpty) issues :+= s"Empty department for employee ${employee.empName}"
       if (employee.sal < 0) issues :+= s"Negative salary for employee ${employee.empName}"
       if (employee.rating < 0 || employee.rating > 5) issues :+= s"Invalid rating for employee ${employee.empName}"
       issues
