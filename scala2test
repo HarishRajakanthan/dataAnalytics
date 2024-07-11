@@ -1,0 +1,157 @@
+import akka.actor.ActorSystem
+import akka.stream.Materializer
+import play.api.libs.json._
+import play.api.libs.functional.syntax._
+import play.api.libs.ws.{StandaloneWSClient, StandaloneWSRequest}
+import play.api.libs.ws.ahc.StandaloneAhcWSClient
+
+import scala.concurrent.{ExecutionContext, Future}
+import java.sql.{Connection, DriverManager}
+
+case class Employee(empId: Int, empName: String, dept: String, sal: Double, rating: Double)
+
+object Employee {
+  implicit val employeeReads: Reads[Employee] = (
+    (JsPath \ "emp_id").read[Int] and
+    (JsPath \ "emp_name").read[String] and
+    (JsPath \ "dept").read[String] and
+    (JsPath \ "sal").read[Double] and
+    (JsPath \ "rating").read[Double]
+  )(Employee.apply _)
+
+  implicit val employeeSeqReads: Reads[Seq[Employee]] = Reads.seq(employeeReads)
+}
+
+case class HikeInfo(deptHike: Double, ratingHike: Double)
+
+class EmployeeDataProcessor(ws: StandaloneWSClient, dbConfig: DatabaseConfig)(implicit ec: ExecutionContext) {
+
+  def fetchDataFromApi(): Future[Seq[Employee]] = {
+    val apiUrl = "https://api.example.com/employees"
+    ws.url(apiUrl).get()
+      .map { response =>
+        if (response.status == 200) {
+          val jsonBody = Json.parse(response.body)
+          jsonBody.validate[Seq[Employee]] match {
+            case JsSuccess(employees, _) => employees
+            case JsError(errors) =>
+              throw new Exception(s"Failed to parse JSON: ${errors}")
+          }
+        } else {
+          throw new Exception(s"API returned status code ${response.status}")
+        }
+      }
+      .recover {
+        case ex: Exception =>
+          println(s"Error fetching data from API: ${ex.getMessage}")
+          throw ex
+      }
+  }
+
+  // ... rest of the methods remain the same ...
+
+}
+
+// ... rest of the code remains the same ...
+
+
+
+
+
+
+
+
+
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
+import org.mockito.MockitoSugar
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+import play.api.libs.ws._
+import play.api.libs.json._
+import scala.concurrent.Await
+import scala.concurrent.duration._
+
+class EmployeeDataProcessorSpec extends AnyFlatSpec with Matchers with MockitoSugar {
+
+  "EmployeeDataProcessor" should "fetch data from API correctly" in {
+    val mockWs = mock[StandaloneWSClient]
+    val mockWSRequest = mock[StandaloneWSRequest]
+    val mockWSResponse = mock[StandaloneWSResponse]
+    val mockDbConfig = mock[DatabaseConfig]
+
+    val jsonString = """[
+      {"emp_id": 1, "emp_name": "John Doe", "dept": "IT", "sal": 50000, "rating": 4.5},
+      {"emp_id": 2, "emp_name": "Jane Smith", "dept": "HR", "sal": 60000, "rating": 4.0}
+    ]"""
+
+    when(mockWs.url(any[String])).thenReturn(mockWSRequest)
+    when(mockWSRequest.get()).thenReturn(Future.successful(mockWSResponse))
+    when(mockWSResponse.status).thenReturn(200)
+    when(mockWSResponse.body).thenReturn(jsonString)
+
+    val processor = new EmployeeDataProcessor(mockWs, mockDbConfig)
+    val result = processor.fetchDataFromApi()
+
+    Await.result(result, 5.seconds) should have length 2
+    Await.result(result, 5.seconds).head shouldBe Employee(1, "John Doe", "IT", 50000, 4.5)
+    Await.result(result, 5.seconds).last shouldBe Employee(2, "Jane Smith", "HR", 60000, 4.0)
+  }
+
+  it should "handle API unavailability" in {
+    val mockWs = mock[StandaloneWSClient]
+    val mockWSRequest = mock[StandaloneWSRequest]
+    val mockDbConfig = mock[DatabaseConfig]
+
+    when(mockWs.url(any[String])).thenReturn(mockWSRequest)
+    when(mockWSRequest.get()).thenReturn(Future.failed(new Exception("Connection refused")))
+
+    val processor = new EmployeeDataProcessor(mockWs, mockDbConfig)
+    val result = processor.fetchDataFromApi()
+
+    intercept[Exception] {
+      Await.result(result, 5.seconds)
+    }
+  }
+
+  it should "handle non-200 status codes" in {
+    val mockWs = mock[StandaloneWSClient]
+    val mockWSRequest = mock[StandaloneWSRequest]
+    val mockWSResponse = mock[StandaloneWSResponse]
+    val mockDbConfig = mock[DatabaseConfig]
+
+    when(mockWs.url(any[String])).thenReturn(mockWSRequest)
+    when(mockWSRequest.get()).thenReturn(Future.successful(mockWSResponse))
+    when(mockWSResponse.status).thenReturn(404)
+
+    val processor = new EmployeeDataProcessor(mockWs, mockDbConfig)
+    val result = processor.fetchDataFromApi()
+
+    val exception = intercept[Exception] {
+      Await.result(result, 5.seconds)
+    }
+    exception.getMessage should include("API returned status code 404")
+  }
+
+  it should "handle invalid JSON response" in {
+    val mockWs = mock[StandaloneWSClient]
+    val mockWSRequest = mock[StandaloneWSRequest]
+    val mockWSResponse = mock[StandaloneWSResponse]
+    val mockDbConfig = mock[DatabaseConfig]
+
+    val invalidJsonString = """[{"invalid": "json"}]"""
+
+    when(mockWs.url(any[String])).thenReturn(mockWSRequest)
+    when(mockWSRequest.get()).thenReturn(Future.successful(mockWSResponse))
+    when(mockWSResponse.status).thenReturn(200)
+    when(mockWSResponse.body).thenReturn(invalidJsonString)
+
+    val processor = new EmployeeDataProcessor(mockWs, mockDbConfig)
+    val result = processor.fetchDataFromApi()
+
+    val exception = intercept[Exception] {
+      Await.result(result, 5.seconds)
+    }
+    exception.getMessage should include("Failed to parse JSON")
+  }
+}
