@@ -77,17 +77,12 @@ class EmployeeDataProcessor(db: Database) {
   }
 
   // Calculate salary hike and update output table
-  def calculateAndUpdateSalaries: Future[Int] = {
+    def calculateAndUpdateSalaries: Future[Int] = {
     val action = for {
       empData <- employees.result
       hikeData <- hikeInfo.result
-    } yield (empData, hikeData)
-
-    db.run(action).flatMap { case (employees, hikeInfos) =>
-      val hikeInfoMap = hikeInfos.map(info => info.dept -> info).toMap
-
-      val updatedEmployees = employees.map { employee =>
-        hikeInfoMap.get(employee.dept).map { info =>
+      updatedEmployees = empData.map { employee =>
+        hikeData.find(_.dept == employee.dept).map { info =>
           val hike = info.deptHike + (employee.rating * info.ratingHike)
           val newSalary = employee.sal * (1 + hike)
           (employee.empId, employee.empName, employee.dept, employee.sal, newSalary, hike * 100)
@@ -96,9 +91,10 @@ class EmployeeDataProcessor(db: Database) {
           (employee.empId, employee.empName, employee.dept, employee.sal, employee.sal, 0.0)
         }
       }
+      insertCount <- outputTable ++= updatedEmployees
+    } yield insertCount
 
-      db.run(outputTable ++= updatedEmployees)
-    }
+    db.run(action.transactionally)
   }
 
   // Data quality check
