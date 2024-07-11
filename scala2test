@@ -1,3 +1,5 @@
+
+
 import akka.actor.ActorSystem
 import akka.stream.Materializer
 import play.api.libs.json._
@@ -163,3 +165,100 @@ class EmployeeDataProcessorSpec extends AnyFlatSpec with Matchers with MockitoSu
     when(mockWSRequest.get()).thenAnswer(_ => Future.successful(mockWSResponse))
     when(mockWSResponse.status).thenReturn(200)
     when(mockWSResponse.body).thenReturn(jsonString)
+
+
+
+import org.scalatest.flatspec.AnyFlatSpec
+import org.scalatest.matchers.should.Matchers
+import org.scalamock.scalatest.MockFactory
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{Future, Await}
+import scala.concurrent.duration._
+import play.api.libs.ws._
+import play.api.libs.json._
+
+class EmployeeDataProcessorSpec extends AnyFlatSpec with Matchers with MockFactory {
+
+  "EmployeeDataProcessor" should "fetch data from API correctly" in {
+    val mockWs = mock[StandaloneWSClient]
+    val mockWSRequest = mock[StandaloneWSRequest]
+    val mockWSResponse = mock[StandaloneWSResponse]
+    val mockDbConfig = mock[DatabaseConfig]
+
+    val jsonString = """[
+      {"emp_id": 1, "emp_name": "John Doe", "dept": "IT", "sal": 50000, "rating": 4.5},
+      {"emp_id": 2, "emp_name": "Jane Smith", "dept": "HR", "sal": 60000, "rating": 4.0}
+    ]"""
+
+    (mockWs.url _).expects(*).returning(mockWSRequest)
+    (mockWSRequest.get _).expects().returning(Future.successful(mockWSResponse))
+    (mockWSResponse.status _).expects().returning(200)
+    (mockWSResponse.body _).expects().returning(jsonString)
+
+    val processor = new EmployeeDataProcessor(mockWs, mockDbConfig)
+    val result = processor.fetchDataFromApi()
+
+    Await.result(result, 5.seconds) should have length 2
+    Await.result(result, 5.seconds).head shouldBe Employee(1, "John Doe", "IT", 50000, 4.5)
+    Await.result(result, 5.seconds).last shouldBe Employee(2, "Jane Smith", "HR", 60000, 4.0)
+  }
+
+  it should "handle API unavailability" in {
+    val mockWs = mock[StandaloneWSClient]
+    val mockWSRequest = mock[StandaloneWSRequest]
+    val mockDbConfig = mock[DatabaseConfig]
+
+    (mockWs.url _).expects(*).returning(mockWSRequest)
+    (mockWSRequest.get _).expects().returning(Future.failed(new Exception("Connection refused")))
+
+    val processor = new EmployeeDataProcessor(mockWs, mockDbConfig)
+    val result = processor.fetchDataFromApi()
+
+    intercept[Exception] {
+      Await.result(result, 5.seconds)
+    }
+  }
+
+  it should "handle non-200 status codes" in {
+    val mockWs = mock[StandaloneWSClient]
+    val mockWSRequest = mock[StandaloneWSRequest]
+    val mockWSResponse = mock[StandaloneWSResponse]
+    val mockDbConfig = mock[DatabaseConfig]
+
+    (mockWs.url _).expects(*).returning(mockWSRequest)
+    (mockWSRequest.get _).expects().returning(Future.successful(mockWSResponse))
+    (mockWSResponse.status _).expects().returning(404)
+
+    val processor = new EmployeeDataProcessor(mockWs, mockDbConfig)
+    val result = processor.fetchDataFromApi()
+
+    val exception = intercept[Exception] {
+      Await.result(result, 5.seconds)
+    }
+    exception.getMessage should include("API returned status code 404")
+  }
+
+  it should "handle invalid JSON response" in {
+    val mockWs = mock[StandaloneWSClient]
+    val mockWSRequest = mock[StandaloneWSRequest]
+    val mockWSResponse = mock[StandaloneWSResponse]
+    val mockDbConfig = mock[DatabaseConfig]
+
+    val invalidJsonString = """[{"invalid": "json"}]"""
+
+    (mockWs.url _).expects(*).returning(mockWSRequest)
+    (mockWSRequest.get _).expects().returning(Future.successful(mockWSResponse))
+    (mockWSResponse.status _).expects().returning(200)
+    (mockWSResponse.body _).expects().returning(invalidJsonString)
+
+    val processor = new EmployeeDataProcessor(mockWs, mockDbConfig)
+    val result = processor.fetchDataFromApi()
+
+    val exception = intercept[Exception] {
+      Await.result(result, 5.seconds)
+    }
+    exception.getMessage should include("Failed to parse JSON")
+  }
+}
+
+libraryDependencies += "org.scalamock" %% "scalamock" % "5.1.0" % Test
