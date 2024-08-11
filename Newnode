@@ -1,0 +1,76 @@
+import express from 'express';
+import { Client as SCPClient } from 'node-scp';
+import { Client as SSHClient } from 'ssh2';
+import fs from 'fs';
+
+const app = express();
+const port = 3000;
+
+// Middleware to parse JSON request bodies
+app.use(express.json());
+
+app.post('/run-script', async (req, res) => {
+  const { host, username, scriptPath, keyPath } = req.body;
+
+  if (!host || !username || !scriptPath || !keyPath) {
+    return res.status(400).json({ error: 'Missing required parameters' });
+  }
+
+  try {
+    const privateKey = fs.readFileSync(keyPath);
+
+    const scpClient = await SCPClient({
+      host: host,
+      port: 22,
+      username: username,
+      privateKey: privateKey,
+    });
+
+    const sshClient = new SSHClient();
+
+    sshClient.on('ready', () => {
+      console.log('SSH Client :: ready');
+
+      // Execute the shell script
+      sshClient.exec(`bash -c 'sh ${scriptPath}'`, (err, stream) => {
+        if (err) {
+          sshClient.end();
+          return res.status(500).json({ error: 'Error executing script' });
+        }
+
+        let stdout = '';
+        let stderr = '';
+
+        // Accumulate the stdout and stderr outputs
+        stream.on('data', (data) => {
+          stdout += data;
+        }).stderr.on('data', (data) => {
+          stderr += data;
+        });
+
+        // Wait until the script finishes executing
+        stream.on('close', (code, signal) => {
+          console.log(`Stream :: close :: code: ${code}, signal: ${signal}`);
+          sshClient.end();
+          scpClient.close(); // Close the SCP connection if needed
+
+          // Send the final output after the script has fully executed
+          res.status(200).json({ code, signal, stdout, stderr });
+        });
+      });
+    }).connect({
+      host: host,
+      port: 22,
+      username: username,
+      privateKey: privateKey,
+    });
+
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}/`);
+});
