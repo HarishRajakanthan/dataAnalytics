@@ -1,0 +1,67 @@
+<dependencies>
+    <!-- Akka HTTP -->
+    <dependency>
+        <groupId>com.typesafe.akka</groupId>
+        <artifactId>akka-http_2.12</artifactId>
+        <version>10.2.10</version>
+    </dependency>
+
+    <!-- Akka Streams -->
+    <dependency>
+        <groupId>com.typesafe.akka</groupId>
+        <artifactId>akka-stream_2.12</artifactId>
+        <version>2.6.20</version>
+    </dependency>
+
+    <!-- Akka Actor -->
+    <dependency>
+        <groupId>com.typesafe.akka</groupId>
+        <artifactId>akka-actor_2.12</artifactId>
+        <version>2.6.20</version>
+    </dependency>
+    
+    <!-- Akka HTTP Core (optional) -->
+    <dependency>
+        <groupId>com.typesafe.akka</groupId>
+        <artifactId>akka-http-core_2.12</artifactId>
+        <version>10.2.10</version>
+    </dependency>
+
+    <!-- Akka Stream Typed (optional, if you are using Akka Typed) -->
+    <dependency>
+        <groupId>com.typesafe.akka</groupId>
+        <artifactId>akka-actor-typed_2.12</artifactId>
+        <version>2.6.20</version>
+    </dependency>
+
+    <!-- Akka HTTP XML module (optional, for XML handling) -->
+    <dependency>
+        <groupId>com.typesafe.akka</groupId>
+        <artifactId>akka-http-xml_2.12</artifactId>
+        <version>10.2.10</version>
+    </dependency>
+</dependencies>
+
+
+import akka.http.scaladsl.model.headers.RawHeader
+import akka.http.scaladsl.model.HttpHeader
+
+val headers: List[HttpHeader] = List(
+  RawHeader("Authorization", "Bearer your_token_here"),
+  RawHeader("Custom-Header", "custom_value")
+)
+
+val request = HttpRequest(
+  method = HttpMethods.GET,
+  uri = url,
+  headers = headers
+)
+
+val responseFuture = Http().singleRequest(request)
+
+responseFuture.flatMap { response =>
+  response.entity.dataBytes.runWith(FileIO.toPath(outputFilePath))
+}.onComplete {
+  case Success(_) => println("Download complete")
+  case Failure(e) => println(s"Download failed: ${e.getMessage}")
+}
