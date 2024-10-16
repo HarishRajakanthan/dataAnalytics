@@ -1,32 +1,27 @@
-import java.io.{ByteArrayInputStream, InputStream}
-import java.security.KeyStore
-import javax.crypto.SecretKey
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.crypto.key.KeyProviderFactory
+import org.apache.hadoop.fs.Path
 
 object JCEKSDecryption {
   def main(args: Array[String]): Unit = {
     // HDFS configuration
-    val hdfsPath = "hdfs://path/to/your/keystore.jceks"
-    val hdfsConf = new Configuration()
-    val hdfs = FileSystem.get(hdfsConf)
-
-    // Read the JCEKS file from HDFS
-    val inputStream: InputStream = hdfs.open(new Path(hdfsPath))
-    val jceksBytes = Stream.continually(inputStream.read()).takeWhile(_ != -1).map(_.toByte).toArray
-    inputStream.close()
-
-    // Load the JCEKS keystore
-    val keystore = KeyStore.getInstance("JCEKS")
-    val keystorePassword = "your_keystore_password".toCharArray
-    keystore.load(new ByteArrayInputStream(jceksBytes), keystorePassword)
-
-    // Access the secret key from the keystore
-    val alias = "your_secret_key_alias"
-    val keyPassword = "your_key_password".toCharArray
-    val secretKey = keystore.getKey(alias, keyPassword).asInstanceOf[SecretKey]
-
-    // Print or use the decrypted secret key
-    println(s"Decrypted Secret Key: ${new String(secretKey.getEncoded)}")
+    val conf = new Configuration()
+    
+    // Path to the JCEKS file in HDFS
+    val jceksPath = "jceks://hdfs/bla/bla/pwd.jceks"
+    
+    // Initialize the KeyProvider
+    val keyProvider = KeyProviderFactory.getProviders(conf).find(_.getConf.get("fs.defaultFS").contains("hdfs")).get
+    val provider = keyProvider.getKeyProvider(new Path(jceksPath))
+    
+    // Alias used to store the credential
+    val alias = "blab.alias"
+    
+    // Retrieve the secret key (password)
+    val secretKey = provider.getMetadata(alias)
+    val password = new String(secretKey)
+    
+    // Print or use the password
+    println(s"Retrieved Password: $password")
   }
 }
