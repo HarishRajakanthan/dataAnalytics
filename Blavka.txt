@@ -1,0 +1,31 @@
+
+
+Team Name: SAG Risk Force
+Title: SER (Scheduled Exposure Reporting) Application Migration to Workbench
+
+Accomplishment Statement:
+The Scheduled Exposure Risk (SER) is a web-based application designed to help businesses calculate exposure risk, document, and capture approval for commercial loans with a risk rating of 8 or higher. The SER application has now been integrated into the Workbench platform, which required a complete rewrite into a modern tech stack, including ReactJS for the UI, NodeJS for the backend, and OpenShift for deployments. By migrating to Workbench, the application now benefits from enhanced code maintainability and the use of containerized deployments.
+
+Key Talking Points:
+
+A dedicated team of 6+ developers worked over six months to understand and rewrite the entire business functionality, with 95% of the work executed by GBS.
+
+The new application retrieves real-time information on customers, facilities, and guarantors, eliminating reliance on external data sources.
+
+The container-based system ensures continuous availability, scalability, and zero downtime during deployment.
+
+The migration eliminates the recurring costs of managing legacy servers and database maintenance.
+
+By moving away from NPT technologies, the risk of vulnerabilities is significantly reduced.
+
+Integrating CI/CD tools with containerized deployments has strengthened DevOps capabilities and streamlined release management.
+
+
+LOB(s) Impacted: Business Banking, Global Commercial Banking, Special Asset Group
+
+Key Contributors: Koutika, Gourav, Sharma, Sumit, Priyanka, Rao, Kulluru, Raveendra
+
+
+---
+
+Let me know if you'd like further changes!
