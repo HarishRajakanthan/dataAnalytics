@@ -1,0 +1,102 @@
+import React, { useState, useRef } from "react";
+import { Graphviz } from "graphviz-react";
+import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
+
+const ZoomableGraph = () => {
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+  const containerRef = useRef(null);
+
+  const handleNodeClick = (nodeId, event) => {
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const nodeRect = event.target.getBoundingClientRect();
+
+    setSelectedNode(`Details about ${nodeId}`);
+    setDropdownPosition({
+      top: nodeRect.top - containerRect.top + nodeRect.height + 10,
+      left: nodeRect.left - containerRect.left,
+    });
+  };
+
+  const dot = `
+    digraph {
+      rankdir=LR;
+      graph [bgcolor="#f8f9fa"];
+
+      // Style for nodes
+      node [
+        shape=rect,
+        style="rounded, filled",
+        fillcolor="#eaf4fc",
+        color="#007bff",
+        fontcolor="#343a40",
+        fontname="Arial",
+        fontsize=12,
+        width=1.4,
+        height=0.6,
+      ];
+
+      // Style for edges
+      edge [
+        color="#ced4da",
+        penwidth=1.5,
+        arrowhead="normal",
+        arrowsize=0.8,
+      ];
+
+      // Define nodes and edges
+      A [label="Table A"];
+      B [label="Table B"];
+      C [label="Table C"];
+      D [label="Table D"];
+      
+      A -> B;
+      B -> C;
+      C -> A;
+      A -> D;
+    }
+  `;
+
+  return (
+    <div style={{ position: "relative" }} ref={containerRef}>
+      <TransformWrapper
+        initialScale={1}
+        minScale={0.5}
+        maxScale={4}
+        centerContent
+      >
+        <TransformComponent>
+          <div
+            style={{ width: "800px", height: "600px", overflow: "hidden" }}
+            onClick={(e) => {
+              const nodeId = e.target.closest("a")?.textContent;
+              if (nodeId) handleNodeClick(nodeId, e);
+            }}
+          >
+            <Graphviz dot={dot} options={{ width: 800, height: 600 }} />
+          </div>
+        </TransformComponent>
+      </TransformWrapper>
+
+      {selectedNode && (
+        <div
+          style={{
+            position: "absolute",
+            top: dropdownPosition.top,
+            left: dropdownPosition.left,
+            padding: "10px",
+            backgroundColor: "#fff",
+            border: "1px solid #ddd",
+            boxShadow: "0 4px 8px rgba(0, 0, 0, 0.1)",
+            borderRadius: "4px",
+            zIndex: 10,
+          }}
+        >
+          <strong>{selectedNode}</strong>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ZoomableGraph;
