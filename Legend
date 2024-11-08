@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        .legend {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .color-box {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+        }
+        .color1 { background-color: #FF5733; }
+        .color2 { background-color: #33FF57; }
+        .color3 { background-color: #3357FF; }
+    </style>
+    <title>Map Legend</title>
+</head>
+<body>
+
+<div class="legend">
+    <div class="legend-item">
+        <div class="color-box color1"></div>
+        <span>Description for Color 1</span>
+    </div>
+    <div class="legend-item">
+        <div class="color-box color2"></div>
+        <span>Description for Color 2</span>
+    </div>
+    <div class="legend-item">
+        <div class="color-box color3"></div>
+        <span>Description for Color 3</span>
+    </div>
+</div>
+
+</body>
+</html>
